@@ -20,33 +20,74 @@ export interface IStore {
   entries(): JSONObject;
 }
 
-export function Restrict(...params: unknown[]): any {
+export function Restrict(permission?: Permission): any {
+  return function (target: any, key: string) {
+    const isReadable = permission === "r" || permission === "rw";
+    const isWritable = permission === "w" || permission === "rw";
+
+    let value = target[key];
+    Object.defineProperty(target, key, {
+      enumerable: isReadable,
+      configurable: isWritable,
+      get: () => {
+        if (isReadable) {
+          return value;
+        } 
+      },
+      set: (newValue: any) => {
+        if (isWritable) {
+          value = newValue;
+        } 
+      },
+    });
+  };
+
+
 }
 
 export class Store implements IStore {
   defaultPolicy: Permission = "rw";
 
   allowedToRead(key: string): boolean {
-    throw new Error("Method not implemented.");
+    return (
+      Object.getOwnPropertyDescriptor(this, key)?.enumerable ||
+      this.defaultPolicy === "r" ||
+      this.defaultPolicy === "rw"
+    );
   }
 
   allowedToWrite(key: string): boolean {
-    throw new Error("Method not implemented.");
+    return (
+      Object.getOwnPropertyDescriptor(this, key)?.configurable ||
+      this.defaultPolicy === "r" ||
+      this.defaultPolicy === "rw"
+    );
   }
 
   read(path: string): StoreResult {
-    throw new Error("Method not implemented.");
+    if (this.allowedToRead(path)) {
+      return Object.getOwnPropertyDescriptor(this, path)?.value;
+    }
+
+    throw new Error("Read not allowed or property does not exist.");
   }
 
   write(path: string, value: StoreValue): StoreValue {
-    throw new Error("Method not implemented.");
+    if (this.allowedToWrite(path)) {
+      return Object.defineProperty(this, path, {value});
+    }
+    throw new Error("Write not allowed.");
   }
 
   writeEntries(entries: JSONObject): void {
-    throw new Error("Method not implemented.");
+    Object.entries(entries).forEach((entrie) =>
+      this.write(entrie[0], entrie[1])
+    );
   }
 
   entries(): JSONObject {
-    throw new Error("Method not implemented.");
+    const objectEntries = Object.entries(this);
+    const filteredEntries = objectEntries.filter((entrie) => {this.allowedToRead(entrie[0])});
+    return Object.fromEntries(filteredEntries);
   }
 }
